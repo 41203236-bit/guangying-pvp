@@ -13,8 +13,7 @@ let suppressSync = false;
 let myPlayer = null;
 let roomId = null;
 let hostTimer = null;
-let roomListenerStarted = false;
-let roomPollTimer = null;
+let roomUnsubStarted = false;
 let currentRoom = null;
 let matchStarted = false;
 let localJoined = false;
@@ -106,6 +105,31 @@ function setReadyButtons(enabled, text='準備') {
   }
 }
 
+function updateWaitingUI(room) {
+  const players = normalizePlayers(room?.players);
+  const readyO = (players.O.joined || (myPlayer === 'O' && localJoined)) ? ((players.O.ready || (myPlayer === 'O' && localReady)) ? '已準備' : '未準備') : '未加入';
+  const readyX = (players.X.joined || (myPlayer === 'X' && localJoined)) ? ((players.X.ready || (myPlayer === 'X' && localReady)) ? '已準備' : '未準備') : '未加入';
+  document.getElementById('ready-room-id').textContent = roomId || '-';
+  document.getElementById('ready-role').textContent = myPlayer ? (myPlayer === 'O' ? '光 / O' : '影 / X') : '-';
+  document.getElementById('ready-status-O').textContent = readyO;
+  document.getElementById('ready-status-X').textContent = readyX;
+
+  const joinedO = players.O.joined || (myPlayer === 'O' && localJoined);
+  const joinedX = players.X.joined || (myPlayer === 'X' && localJoined);
+  const meReady = myPlayer ? ((players[myPlayer]?.ready) || localReady) : false;
+  const bothJoined = joinedO && joinedX;
+  const bothReady = (players.O.ready || (myPlayer === 'O' && localReady)) && (players.X.ready || (myPlayer === 'X' && localReady));
+  let help = '等待雙方加入並按下準備';
+  if (!bothJoined) help = '等待另一位玩家加入房間';
+  else if (!meReady) help = '雙方已入房，請按下準備';
+  else if (!bothReady) help = '你已準備，等待對手準備';
+  else help = '雙方已準備，正在開始對戰…';
+  document.getElementById('ready-help').textContent = help;
+  const canReady = onlineMode && !!myPlayer && room?.status !== 'playing';
+  setReadyButtons(canReady, meReady ? '取消準備' : '準備');
+  setReadyOverlay(room?.status !== 'playing');
+}
+
 function randomRoomId() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -123,96 +147,6 @@ function freshInitialState(role) {
   state.data.O.stunned = false;
   state.data.X.stunned = false;
   return state;
-}
-
-function roomWithLocal(room) {
-  const players = normalizePlayers(room?.players);
-  if (myPlayer) {
-    players[myPlayer] = {
-      joined: players[myPlayer].joined || localJoined,
-      ready: players[myPlayer].ready || localReady
-    };
-  }
-  return { ...(room || {}), players };
-}
-
-function updateWaitingUI(roomRaw) {
-  const room = roomWithLocal(roomRaw || currentRoom || {});
-  const players = normalizePlayers(room.players);
-  document.getElementById('ready-room-id').textContent = roomId || '-';
-  document.getElementById('ready-role').textContent = myPlayer ? (myPlayer === 'O' ? '光 / O' : '影 / X') : '-';
-
-  const label = (p) => !p.joined ? '未加入' : (p.ready ? '已準備' : '未準備');
-  document.getElementById('ready-status-O').textContent = label(players.O);
-  document.getElementById('ready-status-X').textContent = label(players.X);
-
-  const bothJoined = players.O.joined && players.X.joined;
-  const bothReady = players.O.ready && players.X.ready;
-  const meJoined = myPlayer ? players[myPlayer].joined : false;
-  const meReady = myPlayer ? players[myPlayer].ready : false;
-  let help = '等待雙方加入並按下準備';
-  if (!meJoined) help = '正在同步你的入房狀態…';
-  else if (!bothJoined) help = '等待另一位玩家加入房間';
-  else if (!meReady) help = '雙方已入房，請按下準備';
-  else if (!bothReady) help = '你已準備，等待對手準備';
-  else help = '雙方已準備，正在開始對戰…';
-  document.getElementById('ready-help').textContent = help;
-
-  const canReady = onlineMode && !!myPlayer && room.status !== 'playing' && meJoined;
-  setReadyButtons(canReady, meReady ? '取消準備' : '準備');
-  setReadyOverlay(room.status !== 'playing');
-}
-
-function applyRoom(room) {
-  currentRoom = room;
-  if (!room) {
-    setStatus('房間不存在或已被刪除。');
-    localJoined = false;
-    localReady = false;
-    setReadyOverlay(false);
-    return;
-  }
-  const players = normalizePlayers(room.players);
-  if (myPlayer) {
-    localJoined = players[myPlayer].joined || localJoined;
-    localReady = players[myPlayer].ready || localReady;
-  }
-
-  if (room.state) {
-    suppressSync = true;
-    bridge.stopTimer();
-    bridge.applyState(room.state, { skipTimer: true });
-    suppressSync = false;
-  }
-
-  updateWaitingUI(room);
-
-  if (room.status === 'waiting') {
-    matchStarted = false;
-    syncPerspective();
-    const merged = roomWithLocal(room);
-    const p = normalizePlayers(merged.players);
-    const joinedO = p.O.joined;
-    const joinedX = p.X.joined;
-    if (joinedO && joinedX && room.host === myPlayer) {
-      maybeStartMatch(merged).catch(()=>{});
-    }
-    if (!(joinedO && joinedX)) {
-      const waitingFor = !joinedO ? '光 / O' : '影 / X';
-      setStatus(`房間 ${roomId}：${waitingFor} 尚未加入。你是 ${myPlayer}。`);
-    } else if (!p[myPlayer]?.ready) {
-      setStatus(`房間 ${roomId}：對手已加入，請按準備。你是 ${myPlayer}。`);
-    } else {
-      setStatus(`房間 ${roomId}：你已準備，等待對手準備。你是 ${myPlayer}。`);
-    }
-    clearInterval(hostTimer);
-    return;
-  }
-
-  matchStarted = true;
-  syncPerspective();
-  setStatus(`房間 ${roomId} 已開始。你是 ${myPlayer}，目前輪到 ${room.state?.turn || '-'}。`);
-  runHostTimer(room);
 }
 
 async function createRoom() {
@@ -235,9 +169,13 @@ async function createRoom() {
   matchStarted = false;
   localJoined = true;
   localReady = false;
+  currentRoom = payload;
   syncPerspective();
+  setReadyOverlay(true);
+  setReadyButtons(true, '準備');
+  updateWaitingUI(payload);
   bindRoomListener();
-  applyRoom(payload);
+  setStatus(`房間 ${roomId} 已建立，等待另一位玩家加入。你是 ${myPlayer}。`);
 }
 
 async function joinRoom() {
@@ -252,61 +190,105 @@ async function joinRoom() {
   if (players[myPlayer]?.joined) { setStatus(`這個身分 ${myPlayer} 已有人使用。請換另一邊。`); return; }
   await update(roomRef, {
     [`players/${myPlayer}`]: { joined: true, ready: false },
-    status: room.status === 'playing' ? 'playing' : 'waiting',
-    updatedAt: Date.now()
+    status: room.status === 'playing' ? 'playing' : 'waiting'
   });
   onlineMode = true;
   matchStarted = room.status === 'playing';
   localJoined = true;
   localReady = false;
+  currentRoom = room;
+  const previewRoom = { ...room, players: { ...(room.players||{}), [myPlayer]: { joined: true, ready: false } }, status: room.status === 'playing' ? 'playing' : 'waiting' };
   syncPerspective();
+  setReadyOverlay(previewRoom.status !== 'playing');
+  setReadyButtons(previewRoom.status !== 'playing', '準備');
+  updateWaitingUI(previewRoom);
   bindRoomListener();
-  applyRoom({ ...room, players: { ...normalizePlayers(room.players), [myPlayer]: { joined: true, ready: false } }, status: room.status === 'playing' ? 'playing' : 'waiting' });
+  setStatus(`已加入房間 ${roomId}，你是 ${myPlayer}。請按準備。`);
 }
 
 async function toggleReady() {
-  if (!onlineMode || !roomId || !myPlayer) { setStatus('尚未完成入房同步，請稍候再試。'); return; }
-  const room = roomWithLocal(currentRoom || {});
-  const players = normalizePlayers(room.players);
-  if (!players[myPlayer].joined) { setStatus('尚未完成入房同步，請稍候再試。'); return; }
-  const nextReady = !players[myPlayer].ready;
+  if (!onlineMode || !roomId || !myPlayer || !currentRoom) { setStatus('尚未完成入房同步，請稍候再試。'); return; }
+  const players = normalizePlayers(currentRoom.players);
+  const me = players[myPlayer];
+  const nextReady = !((me && me.ready) || localReady);
   localReady = nextReady;
-  players[myPlayer] = { joined: true, ready: nextReady };
-  applyRoom({ ...(currentRoom || {}), players, status: 'waiting' });
-  await update(ref(db, `rooms/${roomId}`), {
-    [`players/${myPlayer}/joined`]: true,
+  updateWaitingUI({ ...(currentRoom || {}), players: { ...(currentRoom?.players || {}), [myPlayer]: { joined: true, ready: nextReady } }, status: 'waiting' });
+  const roomRef = ref(db, `rooms/${roomId}`);
+  const patch = {
     [`players/${myPlayer}/ready`]: nextReady,
-    status: 'waiting',
-    updatedAt: Date.now()
-  });
+    status: 'waiting'
+  };
+  await update(roomRef, patch);
 }
 
-async function maybeStartMatch(roomRaw) {
-  const room = roomWithLocal(roomRaw);
+async function maybeStartMatch(room) {
   const players = normalizePlayers(room.players);
-  if (!(players.O.joined && players.X.joined && players.O.ready && players.X.ready)) return;
-  if (room.status === 'playing') return;
-  const initialState = freshInitialState(room.host || 'O');
+  if (!(players.O.joined && players.X.joined && players.O.ready && players.X.ready)) return false;
+  if (room.status === 'playing') return true;
+  const initialState = freshInitialState(room.host || myPlayer || 'O');
   await update(ref(db, `rooms/${roomId}`), {
     status: 'playing',
     state: initialState,
     startedAt: Date.now(),
-    lastActionBy: 'system:start'
+    lastActionBy: 'system:start',
+    host: room.host || myPlayer || 'O'
   });
+  return true;
 }
 
 function bindRoomListener() {
-  if (roomListenerStarted) return;
-  roomListenerStarted = true;
-  const roomRef = ref(db, `rooms/${roomId}`);
-  onValue(roomRef, (snapshot) => applyRoom(snapshot.val()));
-  roomPollTimer = setInterval(async () => {
-    if (!onlineMode || !roomId) return;
-    try {
-      const snap = await get(roomRef);
-      if (snap.exists()) applyRoom(snap.val());
-    } catch {}
-  }, 1000);
+  if (roomUnsubStarted) return;
+  roomUnsubStarted = true;
+  onValue(ref(db, `rooms/${roomId}`), async (snapshot) => {
+    const room = snapshot.val();
+    currentRoom = room;
+    if (myPlayer && room?.players?.[myPlayer]) { localJoined = !!room.players[myPlayer].joined; localReady = !!room.players[myPlayer].ready; }
+    if (!room) {
+      setStatus('房間不存在或已被刪除。');
+      localJoined = false;
+      localReady = false;
+      setReadyOverlay(false);
+      return;
+    }
+    if (room.state) {
+      suppressSync = true;
+      bridge.stopTimer();
+      bridge.applyState(room.state, { skipTimer: true });
+      suppressSync = false;
+    }
+
+    updateWaitingUI(room);
+
+    if (room.status === 'waiting') {
+      matchStarted = false;
+      syncPerspective();
+      const players = normalizePlayers(room.players);
+      const joinedO = players.O.joined || (myPlayer === 'O' && localJoined);
+      const joinedX = players.X.joined || (myPlayer === 'X' && localJoined);
+      const bothReady = players.O.ready && players.X.ready;
+      if (joinedO && joinedX && bothReady) {
+        setStatus(`房間 ${roomId}：雙方已準備，正在開始對戰…`);
+        await maybeStartMatch(room);
+        clearInterval(hostTimer);
+        return;
+      }
+      if (!(joinedO && joinedX)) {
+        const waitingFor = !joinedO ? '光 / O' : '影 / X';
+        setStatus(`房間 ${roomId}：${waitingFor} 尚未加入。你是 ${myPlayer}。`);
+      } else if (!players[myPlayer]?.ready) {
+        setStatus(`房間 ${roomId}：對手已加入，請按準備。你是 ${myPlayer}。`);
+      } else {
+        setStatus(`房間 ${roomId}：你已準備，等待對手準備。你是 ${myPlayer}。`);
+      }
+      clearInterval(hostTimer);
+      return;
+    }
+
+    matchStarted = true;
+    syncPerspective();
+    setStatus(`房間 ${roomId} 已開始。你是 ${myPlayer}，目前輪到 ${room.state?.turn || '-'}。`);
+    runHostTimer(room);
+  });
 }
 
 function runHostTimer(room) {
