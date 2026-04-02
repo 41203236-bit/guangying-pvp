@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>光影對決：UI與機制完美修復版</title>
+<style>
+  :root {
+    --panel-bg: rgba(0, 0, 0, 0.8);
+    --glow-O: 0 0 30px #f6d26a;
+    --glow-X: 0 0 30px #9a7bff;
+  }
+
+  body {
+    margin: 0; padding: 0; width: 100vw; height: 100vh;
+    color: white; font-family: "Microsoft JhengHei", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #050816; overflow: hidden; position: relative;
+  }
+
+  .bg-layer {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: #050816 url('Gemini_Generated_Image_axefmzaxefmzaxef.jpg') center/cover no-repeat;
+    filter: brightness(0.3); z-index: -2;
+  }
+
+  #timer-container {
+    font-size: 3.5rem; font-weight: bold; color: #00d4ff;
+    padding: 10px 70px; background: var(--panel-bg);
+    border: 4px solid #00d4ff; border-radius: 60px;
+    margin-bottom: 25px; box-shadow: 0 0 30px #00d4ff;
+  }
+
+  .game-main {
+    display: flex; align-items: center; justify-content: center;
+    gap: 20px; width: 95%; max-width: 1400px;
+  }
+
+  .hp-visual-container {
+    position: relative; width: 100px; height: 450px;
+  }
+  .hp-img-base {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: contain;
+  }
+  .hp-bg { filter: brightness(0.2); z-index: 1; }
+  .hp-fill {
+    z-index: 2; transition: clip-path 0.4s ease-out;
+    clip-path: inset(0% 0 0 0);
+  }
+  .defending-bar { filter: drop-shadow(0 0 15px #00d4ff) brightness(1.2) !important; }
+
+  .hp-text {
+    position: absolute; width: 100%; text-align: center;
+    font-size: 1.2rem; font-weight: 900; color: #fff;
+    text-shadow: 0 0 8px #000; z-index: 10; transition: top 0.4s;
+  }
+
+  .side-panel {
+    display: flex; align-items: center; gap: 20px;
+    background: var(--panel-bg); padding: 25px; border-radius: 35px;
+    border: 3px solid rgba(255,255,255,0.05); transition: all 0.4s ease;
+  }
+
+  .avatar { 
+    width: 140px; height: 260px; border-radius: 20px; object-fit: cover; 
+    border: 3px solid rgba(255,255,255,0.2); filter: brightness(0.4); transition: all 0.4s ease;
+  }
+
+  .active-side-O .avatar { filter: brightness(1); border-color: #f6d26a; box-shadow: var(--glow-O); }
+  .active-side-X .avatar { filter: brightness(1); border-color: #9a7bff; box-shadow: var(--glow-X); }
+  .active-side-O { border-color: rgba(246, 210, 106, 0.5) !important; transform: scale(1.05); }
+  .active-side-X { border-color: rgba(154, 123, 255, 0.5) !important; transform: scale(1.05); }
+
+  .sp-column-vertical { display: flex; flex-direction: column-reverse; gap: 15px; }
+  .sp-dot { width: 45px; height: 45px; background-size: contain; background-repeat: no-repeat; transition: 0.3s; }
+  .sp-on { background-image: url('sp_on.png'); background-color: #00d4ff; border-radius: 50%; box-shadow: 0 0 15px #00d4ff; }
+  .sp-off { background-image: url('sp_off.png'); background-color: #333; border-radius: 50%; opacity: 0.2; }
+
+  .board {
+    display: grid; grid-template-columns: repeat(3, 140px); grid-template-rows: repeat(3, 140px);
+    gap: 15px; padding: 25px; background: rgba(255,255,255,0.05);
+    border-radius: 30px; border: 2px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px);
+  }
+  .cell {
+    background: rgba(0, 0, 0, 0.75); border-radius: 18px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 4.5rem; font-weight: bold; cursor: pointer; transition: 0.2s;
+  }
+  .cell.O { color: #f6d26a; text-shadow: var(--glow-O); }
+  .cell.X { color: #9a7bff; text-shadow: var(--glow-X); }
+
+  .skill-footer {
+    margin-top: 40px; display: flex; align-items: center; gap: 40px;
+    background: var(--panel-bg); padding: 25px 60px; border-radius: 80px;
+    border: 4px solid rgba(255,255,255,0.15);
+  }
+  .skill-label { font-size: 1.8rem; font-weight: bold; color: #00d4ff; border-right: 4px solid #555; padding-right: 35px; }
+  .skill-list { display: flex; gap: 25px; }
+  
+  .s-btn {
+    width: 240px; height: 110px; border: none; border-radius: 25px;
+    cursor: not-allowed; background-size: cover; background-position: center;
+    color: white; opacity: 0.4; filter: brightness(0.6); transition: all 0.3s; 
+  }
+  .s-btn.active { 
+    cursor: pointer; opacity: 1; filter: brightness(1); transform: translateY(-5px); 
+    border: 3px solid #00d4ff; box-shadow: 0 0 20px rgba(0,212,255,0.6);
+  }
+  
+  .btn-atk { background-image: url('skill_atk.png'); }
+  .btn-def { background-image: url('skill_def.png'); }
+  .btn-hel { background-image: url('skill_hel.png'); }
+  .btn-stn { background-image: url('skill_stn.png'); }
+
+
+  .identity-badge {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    padding: 6px 12px; border-radius: 999px; font-size: 0.95rem; font-weight: 900;
+    letter-spacing: 1px; background: rgba(0,0,0,0.72); border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 0 12px rgba(0,0,0,0.35); z-index: 12;
+  }
+  .identity-badge.me { color: #7CFFB2; border-color: rgba(124,255,178,0.45); }
+  .identity-badge.enemy { color: #FF8F8F; border-color: rgba(255,143,143,0.45); }
+
+  .side-panel {
+    position: relative;
+  }
+  .side-panel.my-side {
+    box-shadow: 0 0 0 3px rgba(124,255,178,0.22), 0 0 26px rgba(124,255,178,0.18);
+  }
+  .side-panel.enemy-side {
+    box-shadow: 0 0 0 3px rgba(255,143,143,0.15), 0 0 22px rgba(255,143,143,0.12);
+    opacity: 0.92;
+  }
+
+  #player-role-banner {
+    position: fixed; top: 16px; right: 16px; z-index: 9998;
+    min-width: 220px; text-align: center; padding: 12px 18px; border-radius: 18px;
+    background: rgba(0,0,0,0.72); border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(8px);
+    box-shadow: 0 0 18px rgba(0,0,0,0.3);
+  }
+  #player-role-banner .label { font-size: 0.85rem; opacity: 0.8; margin-bottom: 4px; }
+  #player-role-banner .value { font-size: 1.2rem; font-weight: 900; }
+  #player-role-banner.me-O .value { color: #f6d26a; text-shadow: var(--glow-O); }
+  #player-role-banner.me-X .value { color: #9a7bff; text-shadow: var(--glow-X); }
+  #player-role-banner .turn-note { font-size: 0.85rem; opacity: 0.88; margin-top: 4px; }
+
+  .board-wrap, .skill-footer-wrap { position: relative; }
+  .action-lock-mask {
+    position: absolute; inset: 0; border-radius: 30px; display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 20px; background: rgba(5,8,22,0.45); backdrop-filter: blur(2px);
+    color: #fff; font-weight: 900; letter-spacing: 1px; z-index: 20;
+    border: 2px solid rgba(255,255,255,0.12);
+  }
+  .skill-footer-wrap .action-lock-mask { border-radius: 80px; }
+  .interaction-locked .action-lock-mask { display: flex; }
+  .interaction-locked .board,
+  .interaction-locked .skill-footer {
+    filter: grayscale(0.3) brightness(0.72);
+  }
+  .interaction-locked .board { pointer-events: none; }
+  .interaction-locked .skill-footer { pointer-events: none; }
+
+</style>
+</head>
+<body>
+
+<div class="bg-layer"></div>
+<div id="timer-container">30</div>
+
+<div class="game-main">
+  <div class="hp-visual-container">
+    <div id="hp-val-O" class="hp-text">100%</div>
+    <img src="left-hp-bar.png" class="hp-img-base hp-bg">
+    <img src="left-hp-bar.png" id="hp-fill-O" class="hp-img-base hp-fill">
+  </div>
+
+  <div class="side-panel" id="panel-O">
+    <div class="identity-badge" id="badge-O">光 / O</div>
+    <img src="image_ba490a.png" class="avatar" alt="P1">
+    <div class="sp-column-vertical" id="sp-display-O"></div>
+  </div>
+
+  <div class="board-wrap" id="board-wrap">
+    <div class="board" id="board">
+      <script>for(let i=0; i<9; i++) document.write(`<div class="cell" id="c-${i}" onclick="tap(${i})"></div>`);</script>
+    </div>
+    <div class="action-lock-mask" id="board-lock-mask">等待對手回合</div>
+  </div>
+
+  <div class="side-panel" id="panel-X">
+    <div class="identity-badge" id="badge-X">影 / X</div>
+    <div class="sp-column-vertical" id="sp-display-X"></div>
+    <img src="image_ba4947.png" class="avatar" alt="P2">
+  </div>
+
+  <div class="hp-visual-container">
+    <div id="hp-val-X" class="hp-text">100%</div>
+    <img src="right-hp-bar.png" class="hp-img-base hp-bg">
+    <img src="right-hp-bar.png" id="hp-fill-X" class="hp-img-base hp-fill">
+  </div>
+</div>
+
+<div class="skill-footer-wrap" id="skill-footer-wrap">
+  <div class="skill-footer" id="skill-footer">
+    <div class="skill-label">戰技命令</div>
+    <div class="skill-list" id="skill-list-container"></div>
+  </div>
+  <div class="action-lock-mask" id="skill-lock-mask">不是你的操作階段</div>
+</div>
+<div id="player-role-banner" style="display:none;">
+  <div class="label">你的身份</div>
+  <div class="value" id="player-role-value">本地模式</div>
+  <div class="turn-note" id="player-role-turn-note">未連線</div>
+</div>
+
+<script>
+  let turn = 'O', grid = Array(9).fill(null), queues = {O:[], X:[]};
+  let data = { 
+    O:{hp:100, sp:0, skillUsed:0, stunned:false, defending:false}, 
+    X:{hp:100, sp:0, skillUsed:0, stunned:false, defending:false} 
+  };
+  let timeLeft = 30, timer;
+
+  function startTimer() {
+    clearInterval(timer); timeLeft = 30;
+    timer = setInterval(() => { 
+      timeLeft--; document.getElementById('timer-container').innerText = timeLeft;
+      if(timeLeft <= 0) swapTurn();
+    }, 1000);
+  }
+
+  function tap(i) {
+    if(grid[i] || isGameOver()) return;
+    if(queues[turn].length >= 3) grid[queues[turn].shift()] = null;
+    grid[i] = turn; queues[turn].push(i);
+    render();
+    if(checkWin()) { data[turn].sp = Math.min(5, data[turn].sp + 1); setTimeout(resetGrid, 800); } 
+    else swapTurn();
+    updateUI();
+  }
+
+  function useSkill(type) {
+    let p = turn; if(data[p].skillUsed >= 3) return;
+    let cost = (type==='atk'?1 : type==='stn'?3 : 2);
+    if(data[p].sp < cost) return;
+    data[p].sp -= cost; data[p].skillUsed++;
+    let target = p==='O'?'X':'O';
+    if(type==='atk') {
+      let dmg = 10; if(data[target].defending) { dmg = 5; data[target].defending = false; }
+      data[target].hp = Math.max(0, data[target].hp - dmg);
+    } 
+    else if(type==='def') { data[p].defending = true; }
+    else if(type==='hel') { data[p].hp = Math.min(100, data[p].hp + 6); }
+    else if(type==='stn') { data[target].stunned = true; }
+    updateUI(); checkEnd();
+  }
+
+  function swapTurn() {
+    data[turn].skillUsed = 0; turn = turn==='O'?'X':'O'; data[turn].defending = false; 
+    if(data[turn].stunned) { data[turn].stunned = false; setTimeout(swapTurn, 1000); return; }
+    startTimer(); updateUI();
+  }
+
+  function checkWin() {
+    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    return wins.some(l => grid[l[0]] && grid[l[0]]===grid[l[1]] && grid[l[0]]===grid[l[2]]);
+  }
+
+  function resetGrid() { grid.fill(null); queues.O=[]; queues.X=[]; render(); swapTurn(); }
+
+  function render() {
+    for(let i=0; i<9; i++) {
+      let el = document.getElementById('c-'+i);
+      el.innerText = grid[i] || ''; el.className = 'cell ' + (grid[i] || '');
+    }
+  }
+
+  function updateUI() {
+    ['O','X'].forEach(p => {
+      const hp = data[p].hp;
+      const fillEl = document.getElementById(`hp-fill-${p}`);
+      const valEl = document.getElementById(`hp-val-${p}`);
+      fillEl.style.clipPath = `inset(${100 - hp}% 0 0 0)`;
+      valEl.innerText = Math.floor(hp) + '%';
+      valEl.style.top = `calc(${100 - hp}% + 10px)`; 
+      if(data[p].defending) fillEl.classList.add('defending-bar');
+      else fillEl.classList.remove('defending-bar');
+      document.getElementById(`panel-${p}`).className = 'side-panel' + (turn===p?' active-side-'+p:'');
+      let spHTML = '';
+      for(let i=0; i<5; i++) { spHTML += `<div class="sp-dot ${i < data[p].sp ? 'sp-on' : 'sp-off'}"></div>`; }
+      document.getElementById(`sp-display-${p}`).innerHTML = spHTML;
+    });
+
+    let skills = [{t:'atk', c:1}, {t:'def', c:2}, {t:'hel', c:2}, {t:'stn', c:3}];
+    let html = '';
+    skills.forEach(s => {
+      let can = (data[turn].sp >= s.c && data[turn].skillUsed < 3 && !isGameOver());
+      // 這裡將原本按鈕內的 ${s.n}(${s.c}) 移除，實現純圖標按鈕
+      html += `<button class="s-btn btn-${s.t} ${can ? 'active' : ''}" onclick="useSkill('${s.t}')"></button>`;
+    });
+    document.getElementById('skill-list-container').innerHTML = html;
+  }
+
+  function applyPerspective(myRole = null, online = false) {
+    const panelO = document.getElementById('panel-O');
+    const panelX = document.getElementById('panel-X');
+    const badgeO = document.getElementById('badge-O');
+    const badgeX = document.getElementById('badge-X');
+    const banner = document.getElementById('player-role-banner');
+    const bannerValue = document.getElementById('player-role-value');
+    const bannerTurn = document.getElementById('player-role-turn-note');
+    const boardWrap = document.getElementById('board-wrap');
+    const skillWrap = document.getElementById('skill-footer-wrap');
+
+    panelO.classList.remove('my-side', 'enemy-side');
+    panelX.classList.remove('my-side', 'enemy-side');
+    badgeO.classList.remove('me', 'enemy');
+    badgeX.classList.remove('me', 'enemy');
+    boardWrap.classList.remove('interaction-locked');
+    skillWrap.classList.remove('interaction-locked');
+
+    if (!online || !myRole) {
+      banner.style.display = 'none';
+      badgeO.textContent = '光 / O';
+      badgeX.textContent = '影 / X';
+      return;
+    }
+
+    banner.style.display = 'block';
+    banner.className = myRole === 'O' ? 'me-O' : 'me-X';
+    bannerValue.textContent = myRole === 'O' ? '你是 光 / O' : '你是 影 / X';
+    bannerTurn.textContent = turn === myRole ? '現在輪到你操作' : '現在輪到對手操作';
+
+    if (myRole === 'O') {
+      panelO.classList.add('my-side');
+      panelX.classList.add('enemy-side');
+      badgeO.classList.add('me');
+      badgeX.classList.add('enemy');
+      badgeO.textContent = '你 · 光 / O';
+      badgeX.textContent = '對手 · 影 / X';
+    } else {
+      panelX.classList.add('my-side');
+      panelO.classList.add('enemy-side');
+      badgeX.classList.add('me');
+      badgeO.classList.add('enemy');
+      badgeX.textContent = '你 · 影 / X';
+      badgeO.textContent = '對手 · 光 / O';
+    }
+
+    if (turn !== myRole && !isGameOver()) {
+      boardWrap.classList.add('interaction-locked');
+      skillWrap.classList.add('interaction-locked');
+    }
+  }
+
+  function updateInteractionMasks(myRole = null, online = false) {
+    applyPerspective(myRole, online);
+  }
+
+  function isGameOver() { return data.O.hp <= 0 || data.X.hp <= 0; }
+  function checkEnd() { if(isGameOver()) { clearInterval(timer); alert("戰鬥結束！"); location.reload(); } }
+
+  window.__gameBridge = {
+    getState() {
+      return {
+        turn,
+        grid: [...grid],
+        queues: { O: [...queues.O], X: [...queues.X] },
+        data: JSON.parse(JSON.stringify(data)),
+        timeLeft,
+        gameOver: isGameOver()
+      };
+    },
+    applyState(state, { skipTimer = false } = {}) {
+      if (!state) return;
+      turn = state.turn;
+      grid = [...state.grid];
+      queues = {
+        O: [...(state.queues?.O || [])],
+        X: [...(state.queues?.X || [])]
+      };
+      data = JSON.parse(JSON.stringify(state.data));
+      timeLeft = Number.isFinite(state.timeLeft) ? state.timeLeft : 30;
+      document.getElementById('timer-container').innerText = timeLeft;
+      render();
+      updateUI();
+      if (!skipTimer) {
+        clearInterval(timer);
+      }
+    },
+    stopTimer() { clearInterval(timer); },
+    startTimer,
+    render,
+    updateUI,
+    tap(index) { tap(index); },
+    useSkill(type) { useSkill(type); },
+    setPerspective(myRole, online) { updateInteractionMasks(myRole, online); }
+  };
+
+  startTimer(); updateUI();
+</script>
+
+<style>
+  #online-room-bar {
+    position: fixed; top: 16px; left: 16px; z-index: 9999;
+    background: rgba(0,0,0,0.72); color: #fff; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 14px; padding: 10px 12px; display:flex; gap:8px; align-items:center;
+    font-family: "Microsoft JhengHei", sans-serif; backdrop-filter: blur(8px);
+  }
+  #online-room-bar input, #online-room-bar select, #online-room-bar button {
+    height: 32px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); padding: 0 10px;
+  }
+  #online-room-bar button { cursor: pointer; }
+  #online-room-status { font-size: 12px; opacity: 0.9; max-width: 300px; }
+</style>
+<script type="module" src="./multiplayer.js"></script>
+</body>
+
+</html>
