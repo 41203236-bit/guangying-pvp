@@ -121,7 +121,8 @@ function updateWaitingUI(room) {
   else if (!bothReady) help = '你已準備，等待對手準備';
   else help = '雙方已準備，正在開始對戰…';
   document.getElementById('ready-help').textContent = help;
-  setReadyButtons(!!myPlayer && room?.status !== 'playing', meReady ? '取消準備' : '準備');
+  const canReady = !!myPlayer && !!players[myPlayer]?.joined && room?.status !== 'playing';
+  setReadyButtons(canReady, meReady ? '取消準備' : '準備');
   setReadyOverlay(room?.status !== 'playing');
 }
 
@@ -162,7 +163,10 @@ async function createRoom() {
   await set(ref(db, `rooms/${roomId}`), payload);
   onlineMode = true;
   matchStarted = false;
+  currentRoom = payload;
   syncPerspective();
+  setReadyOverlay(true);
+  updateWaitingUI(payload);
   bindRoomListener();
   setStatus(`房間 ${roomId} 已建立，等待另一位玩家加入。你是 ${myPlayer}。`);
 }
@@ -183,13 +187,17 @@ async function joinRoom() {
   });
   onlineMode = true;
   matchStarted = room.status === 'playing';
+  currentRoom = room;
+  const previewRoom = { ...room, players: { ...(room.players||{}), [myPlayer]: { joined: true, ready: false } }, status: room.status === 'playing' ? 'playing' : 'waiting' };
   syncPerspective();
+  setReadyOverlay(previewRoom.status !== 'playing');
+  updateWaitingUI(previewRoom);
   bindRoomListener();
   setStatus(`已加入房間 ${roomId}，你是 ${myPlayer}。請按準備。`);
 }
 
 async function toggleReady() {
-  if (!onlineMode || !roomId || !myPlayer || !currentRoom) return;
+  if (!onlineMode || !roomId || !myPlayer || !currentRoom) { setStatus('尚未完成入房同步，請稍候再試。'); return; }
   const players = normalizePlayers(currentRoom.players);
   const me = players[myPlayer];
   const nextReady = !me.ready;
@@ -242,9 +250,12 @@ function bindRoomListener() {
         await maybeStartMatch(room);
       }
       if (!(players.O.joined && players.X.joined)) {
-        setStatus(`房間 ${roomId} 等待另一位玩家加入。你是 ${myPlayer}。`);
+        const waitingFor = !players.O.joined ? '光 / O' : '影 / X';
+        setStatus(`房間 ${roomId}：${waitingFor} 尚未加入。你是 ${myPlayer}。`);
+      } else if (!players[myPlayer]?.ready) {
+        setStatus(`房間 ${roomId}：對手已加入，請按準備。你是 ${myPlayer}。`);
       } else {
-        setStatus(`房間 ${roomId} 已集結，請雙方按準備。你是 ${myPlayer}。`);
+        setStatus(`房間 ${roomId}：你已準備，等待對手準備。你是 ${myPlayer}。`);
       }
       clearInterval(hostTimer);
       return;
