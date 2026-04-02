@@ -414,6 +414,28 @@
   #online-room-bar button { cursor: pointer; }
   #online-room-status { font-size: 12px; opacity: 0.9; max-width: 300px; }
 </style>
+
+<style>
+  #ready-overlay {
+    position: fixed; inset: 0; z-index: 9997; display: none; align-items: center; justify-content: center;
+    background: rgba(4, 7, 18, 0.62); backdrop-filter: blur(6px);
+  }
+  .ready-panel {
+    width: min(92vw, 560px); background: rgba(0,0,0,0.78); color: #fff; border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 0 26px rgba(0,0,0,0.35); border-radius: 24px; padding: 28px 30px; text-align: center;
+  }
+  .ready-title { font-size: 2rem; font-weight: 900; margin-bottom: 10px; color: #00d4ff; }
+  .ready-room, .ready-role, .ready-help { margin-top: 8px; font-size: 1rem; }
+  .ready-status-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+  .ready-status-grid > div { background: rgba(255,255,255,0.06); border-radius: 14px; padding: 12px; }
+  .ready-actions { margin-top: 18px; }
+  .ready-actions button {
+    min-width: 160px; height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18);
+    background: linear-gradient(90deg, #00c6ff, #0072ff); color: white; font-weight: 900; cursor: pointer;
+  }
+  .ready-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+
 <script type="module" src="./multiplayer.js"></script>
 </body>
 
