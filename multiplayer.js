@@ -224,12 +224,49 @@ async function toggleReady() {
 async function maybeStartMatch(room) {
   const players = normalizePlayers(room.players);
   if (!(players.O.joined && players.X.joined && players.O.ready && players.X.ready)) return false;
+  if (room.status === 'playing' || room.status === 'starting') return true;
+  const countdownFrom = Date.now() + 3000;
+  await update(ref(db, `rooms/${roomId}`), {
+    status: 'starting',
+    countdownAt: countdownFrom,
+    lastActionBy: 'system:countdown',
+    host: room.host || myPlayer || 'O'
+  });
+  return true;
+}
+
+let countdownTimer = null;
+function clearCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = null;
+}
+
+function showCountdown(seconds) {
+  setReadyOverlay(true);
+  const title = document.querySelector('.ready-title');
+  const help = document.getElementById('ready-help');
+  if (title) title.textContent = `準備開戰 ${seconds}`;
+  if (help) help.textContent = '雙方已準備，倒數後自動進入對戰';
+  setReadyButtons(false, '準備');
+}
+
+async function maybeFinalizeStart(room) {
+  if (room.status !== 'starting') return false;
+  if (!room.countdownAt) return false;
+  const left = Math.ceil((room.countdownAt - Date.now()) / 1000);
+  if (left > 0) {
+    showCountdown(left);
+    return false;
+  }
+  const players = normalizePlayers(room.players);
+  if (!(players.O.joined && players.X.joined && players.O.ready && players.X.ready)) return false;
   if (room.status === 'playing') return true;
   const initialState = freshInitialState(room.host || myPlayer || 'O');
   await update(ref(db, `rooms/${roomId}`), {
     status: 'playing',
     state: initialState,
     startedAt: Date.now(),
+    countdownAt: null,
     lastActionBy: 'system:start',
     host: room.host || myPlayer || 'O'
   });
@@ -260,6 +297,7 @@ function bindRoomListener() {
     updateWaitingUI(room);
 
     if (room.status === 'waiting') {
+      clearCountdown();
       matchStarted = false;
       syncPerspective();
       const players = normalizePlayers(room.players);
@@ -267,7 +305,7 @@ function bindRoomListener() {
       const joinedX = players.X.joined || (myPlayer === 'X' && localJoined);
       const bothReady = players.O.ready && players.X.ready;
       if (joinedO && joinedX && bothReady) {
-        setStatus(`房間 ${roomId}：雙方已準備，正在開始對戰…`);
+        setStatus(`房間 ${roomId}：雙方已準備，正在開始倒數…`);
         await maybeStartMatch(room);
         clearInterval(hostTimer);
         return;
@@ -284,8 +322,33 @@ function bindRoomListener() {
       return;
     }
 
+    if (room.status === 'starting') {
+      matchStarted = false;
+      syncPerspective();
+      const tick = async () => {
+        const left = Math.ceil(((room.countdownAt || 0) - Date.now()) / 1000);
+        if (left > 0) {
+          showCountdown(left);
+          setStatus(`房間 ${roomId}：${left} 秒後開始對戰。`);
+        } else {
+          setStatus(`房間 ${roomId}：正在進入對戰…`);
+          clearCountdown();
+          await maybeFinalizeStart(room);
+        }
+      };
+      clearCountdown();
+      await tick();
+      countdownTimer = setInterval(tick, 250);
+      clearInterval(hostTimer);
+      return;
+    }
+
+    clearCountdown();
     matchStarted = true;
     syncPerspective();
+    const title = document.querySelector('.ready-title');
+    if (title) title.textContent = '房間等待區';
+    setReadyOverlay(false);
     setStatus(`房間 ${roomId} 已開始。你是 ${myPlayer}，目前輪到 ${room.state?.turn || '-'}。`);
     runHostTimer(room);
   });
